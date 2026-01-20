@@ -1,0 +1,9 @@
+# Requirements for 3decision ChimeraX Plugin
+
+# Core dependencies (installed automatically by ChimeraX)
+requests>=2.25.0
+
+# Development dependencies (for testing outside ChimeraX)
+# Note: These are not needed for normal plugin operation
+# PyQt5>=5.15.0  # For GUI testing outside ChimeraX
+# pytest>=6.0.0  # For unit testing

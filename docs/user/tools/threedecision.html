@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3decision ChimeraX Plugin</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; }
+        h3 { color: #7f8c8d; }
+        .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; }
+        .info { background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 10px; margin: 10px 0; }
+        code { background-color: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+        pre { background-color: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+
+<h1>3decision Plugin for ChimeraX</h1>
+
+<p>The 3decision plugin provides seamless integration between ChimeraX and 3decision molecular structure databases, allowing you to search, browse, and load structures directly within ChimeraX.</p>
+
+<h2>Features</h2>
+
+<ul>
+    <li><strong>Structure Search:</strong> Search the 3decision database using keywords, protein names, or other identifiers</li>
+    <li><strong>Project Browser:</strong> Navigate through 3decision projects and select structures to load</li>
+    <li><strong>Direct Loading:</strong> Download and visualize structures directly in ChimeraX with proper metadata</li>
+    <li><strong>Secure Configuration:</strong> Save your 3decision credentials securely within ChimeraX</li>
+    <li><strong>Background Processing:</strong> All network operations run in background threads for responsive UI</li>
+</ul>
+
+<h2>Installation</h2>
+
+<p>The plugin can be installed through ChimeraX's package manager or manually from source.</p>
+
+<div class="info">
+<strong>Requirements:</strong> ChimeraX 1.10.1 or later and internet access to reach your 3decision server.
+</div>
+
+<h2>Configuration</h2>
+
+<p>Before using the plugin, you must configure your 3decision server connection:</p>
+
+<ol>
+    <li>Open the plugin: <strong>Tools → Structure Analysis → 3decision</strong></li>
+    <li>Click the settings button (⚙️) in the top-right corner</li>
+    <li>Enter your 3decision server details:
+        <ul>
+            <li><strong>Server URL:</strong> Your 3decision server address (e.g., <code>https://your-server.com</code>)</li>
+            <li><strong>API Key:</strong> Your personal 3decision API key</li>
+        </ul>
+    </li>
+    <li>Click <strong>Test Connection</strong> to verify your settings</li>
+    <li>Click <strong>Save</strong> to store your configuration</li>
+</ol>
+
+<div class="warning">
+<strong>Security Note:</strong> Your API credentials are stored locally on your computer and are not shared with anyone else.
+</div>
+
+<h2>Usage</h2>
+
+<h3>Searching for Structures</h3>
+
+<p>The Search tab allows you to find structures in the 3decision database:</p>
+
+<ol>
+    <li>Ensure you have a green connection indicator (●) showing you're connected</li>
+    <li>Enter a search term in the search field (e.g., "ABL1", "kinase", "hemoglobin")</li>
+    <li>Click <strong>Search</strong> or press Enter</li>
+    <li>Wait for the search to complete and results to appear in the table</li>
+    <li>Select structures using the checkboxes</li>
+    <li>Click <strong>Load Selected Structures</strong> to download and visualize them</li>
+</ol>
+
+<h3>Browsing Projects</h3>
+
+<p>The Projects tab lets you browse 3decision projects and their structures:</p>
+
+<ol>
+    <li>Click the <strong>Projects</strong> tab</li>
+    <li>Click <strong>Refresh Projects</strong> to load your available projects</li>
+    <li>Select a project from the list to view its structures</li>
+    <li>Use <strong>Select All</strong> or <strong>Select None</strong> to quickly manage selections</li>
+    <li>Click <strong>Load Selected Structures</strong> to load chosen structures with preserved project positioning</li>
+</ol>
+
+<h3>Command Line Interface</h3>
+
+<p>The plugin also provides command-line access:</p>
+
+<pre><code># Open the 3decision tool
+3decision
+
+# Search for structures directly
+3decision search "ABL1"</code></pre>
+
+<h2>Search Results</h2>
+
+<p>The results table displays the following information about found structures:</p>
+
+<ul>
+    <li><strong>Select:</strong> Checkbox to select structures for loading</li>
+    <li><strong>External Code:</strong> PDB code or external identifier</li>
+    <li><strong>Title:</strong> Structure title or description</li>
+    <li><strong>Method:</strong> Experimental method used (e.g., X-ray crystallography, NMR)</li>
+    <li><strong>Resolution:</strong> Structure resolution in Ångströms (if applicable)</li>
+    <li><strong>Date:</strong> Deposition or modification date</li>
+</ul>
+
+<h2>Structure Loading</h2>
+
+<p>When you load structures from 3decision:</p>
+
+<ul>
+    <li>Structures are downloaded in PDB format</li>
+    <li>Each structure appears as a separate model in ChimeraX</li>
+    <li>Models are automatically named using their external codes</li>
+    <li>3decision metadata is attached to models for reference</li>
+    <li>Loading happens in the background with progress updates</li>
+</ul>
+
+<h2>Troubleshooting</h2>
+
+<h3>Connection Issues</h3>
+
+<ul>
+    <li>Verify your 3decision server URL is correct and accessible</li>
+    <li>Check that your API key is valid and active</li>
+    <li>Ensure ChimeraX has internet access</li>
+    <li>Try the <strong>Test Connection</strong> button in settings</li>
+    <li>Contact your 3decision administrator for API access issues</li>
+</ul>
+
+<h3>Search Problems</h3>
+
+<ul>
+    <li>Make sure you have a green connection status (●)</li>
+    <li>Try different search terms or use broader keywords</li>
+    <li>Check the ChimeraX Log for detailed error messages</li>
+    <li>Some searches may take time to process - wait for completion</li>
+</ul>
+
+<h3>Loading Failures</h3>
+
+<ul>
+    <li>Ensure the structures are available for export from your 3decision server</li>
+    <li>Verify you have sufficient permissions to access the structures</li>
+    <li>Check your internet connection stability</li>
+    <li>Try loading fewer structures at once if you encounter timeouts</li>
+</ul>
+
+<h3>Plugin Not Visible</h3>
+
+<ul>
+    <li>Restart ChimeraX after installation</li>
+    <li>Check <strong>Tools → More Tools</strong> if not in the main menu</li>
+    <li>Verify the plugin was installed correctly via <strong>Tools → More Tools → Manage Packages</strong></li>
+</ul>
+
+<h2>API Integration</h2>
+
+<p>The plugin integrates with these 3decision API endpoints:</p>
+
+<ul>
+    <li><code>GET /auth/api/login</code> - Authentication and token retrieval</li>
+    <li><code>GET /search/{query}</code> - Structure search submission</li>
+    <li><code>GET /queues/{queue}/jobs/{id}</code> - Search result polling</li>
+    <li><code>POST /graphql</code> - Detailed structure information retrieval</li>
+    <li><code>POST /exports/structure</code> - Structure export in PDB format</li>
+    <li><code>GET /exports/structure/{id}</code> - Download exported structures</li>
+    <li><code>GET /projects</code> - Project listing</li>
+    <li><code>GET /projects/{id}/structures/matrix</code> - Project structure listing</li>
+</ul>
+
+<div class="warning">
+<strong>SSL Note:</strong> The plugin disables SSL certificate verification to support development servers and internal APIs with self-signed certificates. This is noted in the settings dialog.
+</div>
+
+<h2>Support</h2>
+
+<p>For help with the plugin:</p>
+
+<ul>
+    <li><strong>Plugin Issues:</strong> Check the ChimeraX Log for error messages</li>
+    <li><strong>API Access:</strong> Contact your 3decision administrator</li>
+    <li><strong>ChimeraX Help:</strong> Refer to ChimeraX documentation and support</li>
+</ul>
+
+<h2>Version Information</h2>
+
+<p>This documentation is for 3decision plugin version 1.0.0, compatible with ChimeraX 1.10.1 and later.</p>
+
+</body>
+</html>

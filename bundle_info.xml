@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BundleInfo name="ChimeraX-threedecision" 
+            version="1.1.2" 
+            package="chimerax.threedecision"
+            minSessionVersion="1" 
+            maxSessionVersion="1">
+
+  <Author>threedecision Team</Author>
+  <Email>support@threedecision.com</Email>
+  <URL>https://www.threedecision.com</URL>
+
+  <Synopsis>
+    ChimeraX plugin for Discngine 3decision molecular structure database
+  </Synopsis>
+
+  <Description>
+    A ChimeraX plugin that provides seamless integration with Discngine 3decision services,
+    allowing users to search, download, and visualize molecular structures directly
+    within ChimeraX. Features include structure search, project navigation, and
+    secure credential management.
+  </Description>
+
+  <Categories>
+    <Category name="Molecular Structure"/>
+    <Category name="Database"/>
+  </Categories>
+
+  <Dependencies>
+    <Dependency name="ChimeraX-Core" version=">=1.10"/>
+    <Dependency name="ChimeraX-UI" version=">=1.10"/>
+  </Dependencies>
+
+  <Classifiers>
+    <PythonClassifier>Development Status :: 4 - Beta</PythonClassifier>
+    <PythonClassifier>License :: OSI Approved :: MIT License</PythonClassifier>
+    <PythonClassifier>Programming Language :: Python :: 3</PythonClassifier>
+    <PythonClassifier>Programming Language :: Python :: 3.9</PythonClassifier>
+    <PythonClassifier>Programming Language :: Python :: 3.10</PythonClassifier>
+    <PythonClassifier>Programming Language :: Python :: 3.11</PythonClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: threedecision :: 
+      Structure Analysis :: Discngine 3decision structure search and loading</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: Discngine 3decision :: 
+      Structure Analysis :: Discngine 3decision</ChimeraXClassifier>
+  </Classifiers>
+
+</BundleInfo>
