@@ -1,0 +1,12 @@
+LICENSE
+README.md
+ChimeraX_threedecision.egg-info/PKG-INFO
+ChimeraX_threedecision.egg-info/SOURCES.txt
+ChimeraX_threedecision.egg-info/dependency_links.txt
+ChimeraX_threedecision.egg-info/requires.txt
+ChimeraX_threedecision.egg-info/top_level.txt
+src/__init__.py
+src/api_client.py
+src/commands.py
+src/gui.py
+src/settings.py
