@@ -681,6 +681,12 @@ class ThreeDecisionTool(ToolInstance):
         self.open_file_button.setEnabled(False)
         files_buttons.addWidget(self.open_file_button)
         
+        self.open_system_button = QPushButton("Download && Open with System")
+        self.open_system_button.setToolTip("Download the file and open it with the system's default application (useful for PDFs, images, etc.)")
+        self.open_system_button.clicked.connect(self.download_and_open_with_system)
+        self.open_system_button.setEnabled(False)
+        files_buttons.addWidget(self.open_system_button)
+        
         layout.addLayout(files_buttons)
         
         # Status label for file operations
@@ -812,6 +818,7 @@ class ThreeDecisionTool(ToolInstance):
         has_selection = len(selected_items) > 0
         
         self.open_file_button.setEnabled(has_selection)
+        self.open_system_button.setEnabled(has_selection)
         
     def refresh_associated_files(self):
         """Refresh the associated files list"""
@@ -839,16 +846,23 @@ class ThreeDecisionTool(ToolInstance):
                            'CNS Map', 'MTZ Reflection', 'MRC Map', 'DX Map', 'SDF Molecule', 
                            'MOL2 Molecule', 'XYZ Coordinates', 'CCP4 Map']
         
-        # Allow some unsupported but common formats to be downloaded
-        unsupported_but_downloadable = ['RDock Grid', 'AS File']
+        # Formats that ChimeraX cannot open but can be opened with system apps
+        system_open_formats = ['RDock Grid', 'AS File', 'PDF File', 'PNG File', 'JPG File', 
+                              'JPEG File', 'TIF File', 'TIFF File', 'DOC File', 'DOCX File',
+                              'XLS File', 'XLSX File', 'CSV File', 'TXT File']
         
-        if file_format not in supported_formats and file_format not in unsupported_but_downloadable:
-            QMessageBox.warning(self.tool_window.ui_area, "Unsupported Format", 
-                              f"File format '{file_format}' is not supported for direct opening in ChimeraX")
-            return
-        elif file_format in unsupported_but_downloadable:
-            QMessageBox.information(self.tool_window.ui_area, "Download Only", 
-                                  f"'{file_format}' files can be downloaded but not directly opened in ChimeraX.\nUse the Download button instead.")
+        if file_format not in supported_formats:
+            # Check if it's a format that can be opened with system app
+            if file_format in system_open_formats or file_format.endswith(' File'):
+                QMessageBox.information(self.tool_window.ui_area, "Use System Application", 
+                                      f"'{file_format}' files cannot be opened directly in ChimeraX.\n\n"
+                                      f"Use the 'Download & Open with System' button to open this file "
+                                      f"with your system's default application.")
+            else:
+                QMessageBox.warning(self.tool_window.ui_area, "Unsupported Format", 
+                                  f"File format '{file_format}' is not supported for direct opening in ChimeraX.\n\n"
+                                  f"You can try using 'Download & Open with System' to open it with "
+                                  f"your system's default application.")
             return
             
         try:
@@ -924,6 +938,81 @@ class ThreeDecisionTool(ToolInstance):
         except Exception as e:
             self.files_status_label.setText(f"Error opening file: {str(e)}")
             QMessageBox.critical(self.tool_window.ui_area, "Open Error", str(e))
+
+    def download_and_open_with_system(self):
+        """Download the selected file and open it with the system's default application.
+        
+        This is useful for files that ChimeraX cannot open directly (PDFs, images, documents, etc.).
+        Works cross-platform on Windows, macOS, and Linux.
+        """
+        selected_row = self.files_table.currentRow()
+        if selected_row < 0:
+            QMessageBox.warning(self.tool_window.ui_area, "Warning", "Please select a file to download")
+            return
+            
+        file_item = self.files_table.item(selected_row, 0)
+        if not file_item:
+            return
+            
+        file_info = file_item.data(Qt.UserRole)
+        filename = file_item.text()
+        
+        try:
+            self.files_status_label.setText(f"Downloading {filename}...")
+            
+            # Download file
+            file_data = self.api_client.download_file(file_info)
+            
+            if file_data:
+                import tempfile
+                import os
+                import sys
+                import subprocess
+                
+                # Save to a persistent temp location (not just tempfile that gets deleted)
+                # Use a subdirectory to keep things organized
+                temp_dir = os.path.join(tempfile.gettempdir(), '3decision_downloads')
+                os.makedirs(temp_dir, exist_ok=True)
+                file_path = os.path.join(temp_dir, filename)
+                
+                with open(file_path, 'wb') as f:
+                    f.write(file_data)
+                
+                self.files_status_label.setText(f"Opening {filename} with system application...")
+                
+                # Open with system default application - cross-platform
+                self._open_file_with_system(file_path)
+                
+                self.files_status_label.setText(f"Downloaded and opened {filename}")
+                
+            else:
+                self.files_status_label.setText("Failed to download file")
+                QMessageBox.warning(self.tool_window.ui_area, "Error", "Failed to download file")
+                
+        except Exception as e:
+            self.files_status_label.setText(f"Error: {str(e)}")
+            QMessageBox.critical(self.tool_window.ui_area, "Error", f"Failed to download and open file: {str(e)}")
+    
+    def _open_file_with_system(self, file_path: str):
+        """Open a file with the system's default application.
+        
+        Cross-platform implementation for Windows, macOS, and Linux.
+        
+        Args:
+            file_path: The path to the file to open
+        """
+        import sys
+        import subprocess
+        import os
+        
+        if sys.platform == 'darwin':  # macOS
+            subprocess.run(['open', file_path], check=True)
+        elif sys.platform == 'win32':  # Windows
+            # os.startfile is Windows-only and opens with default app
+            os.startfile(file_path)
+        else:  # Linux and other Unix-like systems
+            # xdg-open is the standard way to open files on Linux
+            subprocess.run(['xdg-open', file_path], check=True)
 
     def _build_simple_interface(self):
         """Build simple interface when Qt is not available"""
