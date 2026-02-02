@@ -15,6 +15,31 @@ import urllib3
 # Disable SSL warnings when ignoring certificate verification
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Private structure naming attribute - stored as module-level variable
+# Options: 'label', 'title', 'external_code', 'internal_id'
+_private_structure_naming_attribute = 'label'
+
+def set_private_structure_naming_attribute(attribute):
+    """Set the attribute to use for naming private structures.
+    
+    Args:
+        attribute: One of 'label', 'title', 'external_code', or 'internal_id'
+    """
+    global _private_structure_naming_attribute
+    if attribute in ('label', 'title', 'external_code', 'internal_id'):
+        _private_structure_naming_attribute = attribute
+    else:
+        _private_structure_naming_attribute = 'label'  # Default
+
+def get_private_structure_naming_attribute():
+    """Get the attribute used for naming private structures.
+    
+    Returns:
+        One of 'label', 'title', 'external_code', or 'internal_id'
+    """
+    global _private_structure_naming_attribute
+    return _private_structure_naming_attribute
+
 class ThreeDecisionAPIClient:
     """
     Client for interacting with 3decision API
@@ -96,6 +121,10 @@ class ThreeDecisionAPIClient:
                     self.api_key = config['API'].get('api_key')
                     self.token = config['API'].get('token')
                     
+                    # Load private structure naming attribute setting
+                    naming_attr = config['API'].get('private_structure_naming_attribute', 'label')
+                    set_private_structure_naming_attribute(naming_attr)
+                    
                     if self.token:
                         self.http_session.headers.update({
                             'Authorization': f'Bearer {self.token}',
@@ -112,7 +141,8 @@ class ThreeDecisionAPIClient:
             config['API'] = {
                 'base_url': self.base_url or '',
                 'api_key': self.api_key or '',
-                'token': self.token or ''
+                'token': self.token or '',
+                'private_structure_naming_attribute': get_private_structure_naming_attribute()
             }
             
             with open(self.config_file, 'w') as f:
@@ -120,6 +150,11 @@ class ThreeDecisionAPIClient:
                 
         except Exception as e:
             self.log_error(f"Error saving config: {e}")
+    
+    def save_naming_attribute_setting(self, attribute: str):
+        """Save private structure naming attribute setting to config file"""
+        set_private_structure_naming_attribute(attribute)
+        self.save_config()
             
     def configure(self, base_url: str, api_key: str):
         """Configure API settings"""
@@ -135,7 +170,7 @@ class ThreeDecisionAPIClient:
         self.http_session.headers.update({
             'Dng-Api-Key': self.api_key,
             'X-API-Version': '1',
-            'User-Agent': 'ChimeraX-3decision-Plugin/1.1.2'
+            'User-Agent': 'ChimeraX-3decision-Plugin/1.1.3'
         })
         
         # Remove Authorization header if present
@@ -162,7 +197,7 @@ class ThreeDecisionAPIClient:
             headers = {
                 'Dng-Api-Key': self.api_key,
                 'X-API-Version': '1',
-                'User-Agent': 'ChimeraX-3decision-Plugin/1.1.2'
+                'User-Agent': 'ChimeraX-3decision-Plugin/1.1.3'
             }
             
             response = self.http_session.get(url, headers=headers)
@@ -176,7 +211,7 @@ class ThreeDecisionAPIClient:
                     self.http_session.headers.update({
                         'Authorization': f'Bearer {self.token}',
                         'X-API-Version': '1',
-                        'User-Agent': 'ChimeraX-3decision-Plugin/1.1.2'
+                        'User-Agent': 'ChimeraX-3decision-Plugin/1.1.3'
                     })
                     # Remove API key header as we now have token
                     if 'Dng-Api-Key' in self.http_session.headers:
@@ -364,6 +399,7 @@ class ThreeDecisionAPIClient:
                     general {
                         structure_id
                         external_code
+                        label
                         title
                         method
                         resolution
@@ -495,13 +531,13 @@ class ThreeDecisionAPIClient:
             raise
     
     def download_structures_zip(self, structure_ids: List[int], matrices: List[Dict] = None) -> Optional[bytes]:
-        """Download structures as a ZIP file from the frontend/exports/structure endpoint"""
+        """Download structures as a ZIP file from the /exports/structure endpoint"""
         if not self.is_authenticated():
             raise Exception("Not authenticated")
             
         try:
             # Step 1: Submit export request to get domain event ID
-            url = f"{self.base_url}/frontend/exports/structure"
+            url = f"{self.base_url}/exports/structure"
             headers = {
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json"
@@ -578,7 +614,7 @@ class ThreeDecisionAPIClient:
                                                 filename_without_ext = filename.rsplit('.', 1)[0]
                                             
                                             # Step 3: Download the actual ZIP file
-                                            download_url = f"{self.base_url}/frontend/exports/structure/{domain_event_id}?filename={filename_without_ext}&download=true"
+                                            download_url = f"{self.base_url}/exports/structure/{domain_event_id}?filename={filename_without_ext}&download=true"
                                             
                                             
                                             download_response = self.http_session.get(download_url)
@@ -626,6 +662,74 @@ class ThreeDecisionAPIClient:
                 
         except Exception as e:
             self.log_error(f"ZIP download error: {e}")
+            import traceback
+            self.log_error(f"Full traceback: {traceback.format_exc()}")
+            return None
+    
+    def get_structure_internal_id(self, structure_id: int) -> Optional[str]:
+        """
+        Fetch the internal_id annotation for a structure.
+        
+        The internal_id is stored as a structure annotation with ANNOT_TYPE_LABEL = "Internal ID".
+        This method calls the GET /structures/info/annotation endpoint and extracts the internal_id.
+        
+        Args:
+            structure_id: The 3decision internal structure ID (numeric)
+            
+        Returns:
+            The internal_id value if found, None otherwise
+        """
+        if not self.test_connection():
+            return None
+            
+        try:
+            # Use GET /structures/info/annotation with structure_id as query parameter
+            url = f"{self.base_url}/structures/info/annotation"
+            params = {
+                "structure_id": [int(structure_id)]
+            }
+            headers = {
+                'X-API-VERSION': '1',
+                'Authorization': f'Bearer {self.token}'
+            }
+            
+            self.log_info(f"Fetching internal_id for structure_id: {structure_id}")
+            
+            response = self._make_authenticated_request(
+                method='GET',
+                url=url,
+                headers=headers,
+                params=params
+            )
+            
+            if response is None:
+                return None
+            
+            if response.status_code in [200, 201]:
+                data = response.json()
+                
+                # Response is an array of structures with annotations
+                if isinstance(data, list) and len(data) > 0:
+                    structure_data = data[0]
+                    annotation_info = structure_data.get('ANNOTATION_INFO', {})
+                    structure_annots = annotation_info.get('StructureAnnot', [])
+                    
+                    # Find the "Internal ID" annotation
+                    for annot in structure_annots:
+                        if annot.get('ANNOT_TYPE_LABEL', '').lower() == 'internal id':
+                            internal_id = annot.get('ANNOT_VALUE')
+                            if internal_id:
+                                self.log_info(f"Found internal_id for structure_id {structure_id}: {internal_id}")
+                                return internal_id
+                
+                self.log_info(f"No internal_id annotation found for structure_id {structure_id}")
+                return None
+            else:
+                self.log_error(f"Structure annotations request failed: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            self.log_error(f"Get internal_id error: {e}")
             import traceback
             self.log_error(f"Full traceback: {traceback.format_exc()}")
             return None
@@ -786,7 +890,7 @@ class ThreeDecisionAPIClient:
                                                 filename_without_ext = filename.rsplit('.', 1)[0]
                                             
                                             # Download the actual PDB file
-                                            download_url = f"{self.base_url}/frontend/exports/structure/{domain_event_id}?filename={filename_without_ext}&download=true"
+                                            download_url = f"{self.base_url}/exports/structure/{domain_event_id}?filename={filename_without_ext}&download=true"
                                             
                                             download_response = self.http_session.get(download_url)
                                             

@@ -43,6 +43,65 @@ from .api_client import ThreeDecisionAPIClient
 from .settings import SettingsDialog
 
 
+def get_object_name(external_code: str, label: str = None, source: str = None, title: str = None, internal_id: str = None) -> str:
+    """
+    Determine the best object name for a structure in ChimeraX.
+    
+    Naming logic:
+    - For public domain structures (RCSB PDB, PDB, AlphaFold, etc.): use external_code (e.g., '1abo')
+    - For private/internal structures: use the attribute configured in settings 
+      (label, title, external_code, or internal_id)
+    - Fallback: use external_code
+    
+    The name is sanitized to be valid for ChimeraX (no spaces, special chars replaced).
+    """
+    from .api_client import get_private_structure_naming_attribute
+    
+    # Define public/known sources where external_code is meaningful
+    public_sources = [
+        'rcsb', 'pdb', 'alphafold', 'uniprot', 'chembl', 'drugbank',
+        'pubchem', 'zinc', 'emdb', 'wwpdb'
+    ]
+    
+    # Check if it's a public domain structure
+    is_public = False
+    if source:
+        source_lower = source.lower()
+        is_public = any(ps in source_lower for ps in public_sources)
+    
+    # Determine the name to use
+    if is_public:
+        # Use external_code for public structures (it's the PDB code, etc.)
+        name = external_code
+    else:
+        # For private structures, use the configured naming attribute
+        naming_attr = get_private_structure_naming_attribute()
+        
+        if naming_attr == 'label' and label and label.strip() and label.lower() not in ['n/a', 'null', 'none', '']:
+            name = label.strip()
+        elif naming_attr == 'title' and title and title.strip() and title.lower() not in ['n/a', 'null', 'none', '']:
+            name = title.strip()
+        elif naming_attr == 'internal_id' and internal_id and internal_id.strip() and internal_id.lower() not in ['n/a', 'null', 'none', '']:
+            name = internal_id.strip()
+        else:
+            # Fallback to external_code
+            name = external_code
+    
+    # Strip '3dec_' prefix if present (from API file naming)
+    if name.lower().startswith('3dec_'):
+        name = name[5:]
+    
+    # Sanitize name for ChimeraX (replace invalid characters)
+    # ChimeraX model names should be alphanumeric with underscores
+    sanitized = ''.join(c if c.isalnum() or c == '_' else '_' for c in name)
+    
+    # Ensure we have a valid name
+    if not sanitized:
+        sanitized = external_code if external_code else 'structure'
+    
+    return sanitized
+
+
 class NumericTableWidgetItem(QTableWidgetItem):
     """Custom QTableWidgetItem that sorts numerically instead of alphabetically"""
     def __init__(self, text, numeric_value):
@@ -632,6 +691,12 @@ class ThreeDecisionTool(ToolInstance):
         self.open_file_button.setEnabled(False)
         files_buttons.addWidget(self.open_file_button)
         
+        self.open_system_button = QPushButton("Download && Open with System")
+        self.open_system_button.setToolTip("Download the file and open it with the system's default application (useful for PDFs, images, etc.)")
+        self.open_system_button.clicked.connect(self.download_and_open_with_system)
+        self.open_system_button.setEnabled(False)
+        files_buttons.addWidget(self.open_system_button)
+        
         layout.addLayout(files_buttons)
         
         # Status label for file operations
@@ -763,6 +828,7 @@ class ThreeDecisionTool(ToolInstance):
         has_selection = len(selected_items) > 0
         
         self.open_file_button.setEnabled(has_selection)
+        self.open_system_button.setEnabled(has_selection)
         
     def refresh_associated_files(self):
         """Refresh the associated files list"""
@@ -790,16 +856,23 @@ class ThreeDecisionTool(ToolInstance):
                            'CNS Map', 'MTZ Reflection', 'MRC Map', 'DX Map', 'SDF Molecule', 
                            'MOL2 Molecule', 'XYZ Coordinates', 'CCP4 Map']
         
-        # Allow some unsupported but common formats to be downloaded
-        unsupported_but_downloadable = ['RDock Grid', 'AS File']
+        # Formats that ChimeraX cannot open but can be opened with system apps
+        system_open_formats = ['RDock Grid', 'AS File', 'PDF File', 'PNG File', 'JPG File', 
+                              'JPEG File', 'TIF File', 'TIFF File', 'DOC File', 'DOCX File',
+                              'XLS File', 'XLSX File', 'CSV File', 'TXT File']
         
-        if file_format not in supported_formats and file_format not in unsupported_but_downloadable:
-            QMessageBox.warning(self.tool_window.ui_area, "Unsupported Format", 
-                              f"File format '{file_format}' is not supported for direct opening in ChimeraX")
-            return
-        elif file_format in unsupported_but_downloadable:
-            QMessageBox.information(self.tool_window.ui_area, "Download Only", 
-                                  f"'{file_format}' files can be downloaded but not directly opened in ChimeraX.\nUse the Download button instead.")
+        if file_format not in supported_formats:
+            # Check if it's a format that can be opened with system app
+            if file_format in system_open_formats or file_format.endswith(' File'):
+                QMessageBox.information(self.tool_window.ui_area, "Use System Application", 
+                                      f"'{file_format}' files cannot be opened directly in ChimeraX.\n\n"
+                                      f"Use the 'Download & Open with System' button to open this file "
+                                      f"with your system's default application.")
+            else:
+                QMessageBox.warning(self.tool_window.ui_area, "Unsupported Format", 
+                                  f"File format '{file_format}' is not supported for direct opening in ChimeraX.\n\n"
+                                  f"You can try using 'Download & Open with System' to open it with "
+                                  f"your system's default application.")
             return
             
         try:
@@ -875,6 +948,81 @@ class ThreeDecisionTool(ToolInstance):
         except Exception as e:
             self.files_status_label.setText(f"Error opening file: {str(e)}")
             QMessageBox.critical(self.tool_window.ui_area, "Open Error", str(e))
+
+    def download_and_open_with_system(self):
+        """Download the selected file and open it with the system's default application.
+        
+        This is useful for files that ChimeraX cannot open directly (PDFs, images, documents, etc.).
+        Works cross-platform on Windows, macOS, and Linux.
+        """
+        selected_row = self.files_table.currentRow()
+        if selected_row < 0:
+            QMessageBox.warning(self.tool_window.ui_area, "Warning", "Please select a file to download")
+            return
+            
+        file_item = self.files_table.item(selected_row, 0)
+        if not file_item:
+            return
+            
+        file_info = file_item.data(Qt.UserRole)
+        filename = file_item.text()
+        
+        try:
+            self.files_status_label.setText(f"Downloading {filename}...")
+            
+            # Download file
+            file_data = self.api_client.download_file(file_info)
+            
+            if file_data:
+                import tempfile
+                import os
+                import sys
+                import subprocess
+                
+                # Save to a persistent temp location (not just tempfile that gets deleted)
+                # Use a subdirectory to keep things organized
+                temp_dir = os.path.join(tempfile.gettempdir(), '3decision_downloads')
+                os.makedirs(temp_dir, exist_ok=True)
+                file_path = os.path.join(temp_dir, filename)
+                
+                with open(file_path, 'wb') as f:
+                    f.write(file_data)
+                
+                self.files_status_label.setText(f"Opening {filename} with system application...")
+                
+                # Open with system default application - cross-platform
+                self._open_file_with_system(file_path)
+                
+                self.files_status_label.setText(f"Downloaded and opened {filename}")
+                
+            else:
+                self.files_status_label.setText("Failed to download file")
+                QMessageBox.warning(self.tool_window.ui_area, "Error", "Failed to download file")
+                
+        except Exception as e:
+            self.files_status_label.setText(f"Error: {str(e)}")
+            QMessageBox.critical(self.tool_window.ui_area, "Error", f"Failed to download and open file: {str(e)}")
+    
+    def _open_file_with_system(self, file_path: str):
+        """Open a file with the system's default application.
+        
+        Cross-platform implementation for Windows, macOS, and Linux.
+        
+        Args:
+            file_path: The path to the file to open
+        """
+        import sys
+        import subprocess
+        import os
+        
+        if sys.platform == 'darwin':  # macOS
+            subprocess.run(['open', file_path], check=True)
+        elif sys.platform == 'win32':  # Windows
+            # os.startfile is Windows-only and opens with default app
+            os.startfile(file_path)
+        else:  # Linux and other Unix-like systems
+            # xdg-open is the standard way to open files on Linux
+            subprocess.run(['xdg-open', file_path], check=True)
 
     def _build_simple_interface(self):
         """Build simple interface when Qt is not available"""
@@ -996,11 +1144,12 @@ class ThreeDecisionTool(ToolInstance):
             item.setData(Qt.UserRole, structure)  # Store structure data
             self.results_table.setItem(row, 0, item)
             
-            # Label
-            self.results_table.setItem(row, 1, QTableWidgetItem(external_code))
+            # Label - show empty if empty or missing
+            label = general.get('label', '')
+            self.results_table.setItem(row, 1, QTableWidgetItem(label))
             
             # Title
-            title = general.get('title', 'N/A')
+            title = general.get('title', '')
             self.results_table.setItem(row, 2, QTableWidgetItem(title))
             
             # Method
@@ -1202,10 +1351,14 @@ class ThreeDecisionTool(ToolInstance):
                 general = structure_data.get('general', {})
                 structure_id = str(structure_data.get('structure_id', general.get('structure_id', '')))
                 external_code = general.get('external_code', structure_id)
+                label = general.get('title', '')  # Use title as label for search results
+                source = general.get('source', '')
                 
                 selected_structures.append({
                     'structure_id': structure_id,
                     'external_code': external_code,
+                    'label': label,
+                    'source': source,
                     'matrix': None  # Search results don't have matrices
                 })
         
@@ -1252,19 +1405,57 @@ class ThreeDecisionTool(ToolInstance):
                         models = run(self.session, f'open "{temp_file}"')
                         
                         if models:
-                            # Rename models based on structure info
+                            # Rename models based on structure info using get_object_name
                             for i, (model, structure_info) in enumerate(zip(models, structures)):
-                                structure_id = structure_info['structure_id']
-                                external_code = structure_info['external_code']
+                                # Handle both nested (GraphQL) and flat structure formats
+                                # GraphQL returns data under 'general', project endpoint returns flat structure
+                                general = structure_info.get('general', {})
+                                structure_id = structure_info.get('structure_id') or general.get('structure_id')
+                                external_code = general.get('external_code') or structure_info.get('external_code', str(structure_id))
+                                source = general.get('source') or structure_info.get('source')
                                 
-                                model.name = external_code
+                                # If data came from project endpoint (no 'general'), fetch actual structure metadata
+                                # The project endpoint's 'label' field contains the title, not the actual label
+                                if not general and structure_id:
+                                    # Fetch actual structure info via GraphQL for accurate label/title
+                                    struct_info_list = self.api_client.get_structures_info([int(structure_id)])
+                                    if struct_info_list:
+                                        actual_general = struct_info_list[0].get('general', {})
+                                        label = actual_general.get('label')
+                                        title = actual_general.get('title')
+                                        if not source:
+                                            source = actual_general.get('source')
+                                    else:
+                                        label = None
+                                        title = None
+                                else:
+                                    # Data from GraphQL search - use as-is
+                                    label = general.get('label')
+                                    title = general.get('title')
+                                
+                                # Debug logging
+                                from .api_client import get_private_structure_naming_attribute
+                                naming_attr = get_private_structure_naming_attribute()
+                                self.api_client.log_info(f"DEBUG: structure_info keys: {structure_info.keys()}")
+                                self.api_client.log_info(f"DEBUG: general keys: {general.keys() if general else 'None'}")
+                                self.api_client.log_info(f"DEBUG: naming_attr={naming_attr}, source={source}, title={title}, label={label}, external_code={external_code}")
+                                
+                                # Fetch internal_id if the naming attribute is set to 'internal_id'
+                                internal_id = None
+                                if naming_attr == 'internal_id':
+                                    internal_id = self.api_client.get_structure_internal_id(structure_id)
+                                
+                                # Use smart object naming (same as PyMOL plugin)
+                                object_name = get_object_name(external_code, label, source, title, internal_id)
+                                self.api_client.log_info(f"DEBUG: get_object_name returned: {object_name}")
+                                model.name = object_name
                                 
                                 # Set metadata attributes
                                 model.structure_id = structure_id
                                 model.external_code = external_code
                                 model.source = "3decision"
                                 
-                                self.api_client.log_info(f"Loaded {external_code} from 3decision")
+                                self.api_client.log_info(f"Loaded {object_name} (external_code: {external_code}) from 3decision")
                         
                         # Clean up temp file
                         try:
@@ -1508,7 +1699,11 @@ class ThreeDecisionTool(ToolInstance):
             # Structure details
             structure_id = str(structure.get('STRUCTURE_ID', structure.get('structure_id', '')))
             external_code = structure.get('EXTERNAL_CODE', structure.get('external_code', structure_id))
-            description = structure.get('PROJECT_LABEL', structure.get('description', ''))
+            # Description can come from multiple fields: label, PROJECT_LABEL, description
+            description = (structure.get('label') or 
+                          structure.get('LABEL') or
+                          structure.get('PROJECT_LABEL') or 
+                          structure.get('description', ''))
             
             id_item = QTableWidgetItem(structure_id)
             id_item.setData(Qt.UserRole, structure)  # Store full structure data
@@ -1576,6 +1771,11 @@ class ThreeDecisionTool(ToolInstance):
             # Extract structure info
             structure_id = str(structure_data.get('STRUCTURE_ID', structure_data.get('structure_id', '')))
             external_code = structure_data.get('EXTERNAL_CODE', structure_data.get('external_code', structure_id))
+            # Note: PROJECT_LABEL is the project name, not the structure label
+            # For project structures, we use external_code as the primary name
+            # Only use a label if there's a structure-specific one (not the project name)
+            label = structure_data.get('STRUCTURE_LABEL', structure_data.get('label', ''))
+            source = structure_data.get('SOURCE', structure_data.get('source', ''))
             
             # Get transformation matrix from stored data
             # Check for matrix in TRANSFORM_MATRIX (enriched data) or ReferenceTransforms.transform
@@ -1596,6 +1796,8 @@ class ThreeDecisionTool(ToolInstance):
             selected_structures.append({
                 'structure_id': structure_id,
                 'external_code': external_code,
+                'label': label,
+                'source': source,
                 'matrix': matrix  # May be None if no transformation
             })
             
