@@ -3,7 +3,8 @@
 try:
     from Qt.QtWidgets import (
         QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, 
-        QPushButton, QLabel, QMessageBox, QCheckBox, QGroupBox
+        QPushButton, QLabel, QMessageBox, QCheckBox, QGroupBox, QComboBox,
+        QSizePolicy
     )
     from Qt.QtCore import Qt, QThread
     
@@ -27,13 +28,15 @@ except ImportError:
     try:
         from PyQt5.QtWidgets import (
             QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, 
-            QPushButton, QLabel, QMessageBox, QCheckBox, QGroupBox
+            QPushButton, QLabel, QMessageBox, QCheckBox, QGroupBox, QComboBox,
+            QSizePolicy
         )
         from PyQt5.QtCore import Qt, QThread, pyqtSignal
     except ImportError:
         from PyQt6.QtWidgets import (
             QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, 
-            QPushButton, QLabel, QMessageBox, QCheckBox, QGroupBox
+            QPushButton, QLabel, QMessageBox, QCheckBox, QGroupBox, QComboBox,
+            QSizePolicy
         )
         from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
@@ -90,22 +93,37 @@ class SettingsDialog(QDialog):
         # Settings group
         settings_group = QGroupBox("API Settings")
         form_layout = QFormLayout()
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         
         # Server URL
         self.server_url_edit = QLineEdit()
         self.server_url_edit.setPlaceholderText("https://your-3decision-server.com")
+        self.server_url_edit.setMinimumWidth(300)
+        self.server_url_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         form_layout.addRow("Server URL:", self.server_url_edit)
         
         # API Key
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setPlaceholderText("Your API key")
         self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key_edit.setMinimumWidth(300)
+        self.api_key_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         form_layout.addRow("API Key:", self.api_key_edit)
         
         # Show API key checkbox
         self.show_key_checkbox = QCheckBox("Show API key")
         self.show_key_checkbox.toggled.connect(self.toggle_key_visibility)
         form_layout.addRow("", self.show_key_checkbox)
+        
+        # Private structure naming attribute dropdown
+        self.naming_attribute_combo = QComboBox()
+        self.naming_attribute_combo.addItems(["label", "title", "external_code", "internal_id"])
+        self.naming_attribute_combo.setToolTip(
+            "Choose which attribute to use for naming private structures when loaded into ChimeraX.\n"
+            "Public structures (PDB, AlphaFold, etc.) always use external_code."
+        )
+        self.naming_attribute_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        form_layout.addRow("Private structure name:", self.naming_attribute_combo)
         
         settings_group.setLayout(form_layout)
         main_layout.addWidget(settings_group)
@@ -147,6 +165,13 @@ class SettingsDialog(QDialog):
             self.server_url_edit.setText(self.api_client.base_url)
         if self.api_client.api_key:
             self.api_key_edit.setText(self.api_client.api_key)
+        
+        # Load private structure naming attribute setting
+        from .api_client import get_private_structure_naming_attribute
+        naming_attr = get_private_structure_naming_attribute()
+        index = self.naming_attribute_combo.findText(naming_attr)
+        if index >= 0:
+            self.naming_attribute_combo.setCurrentIndex(index)
             
         # Show connection status
         if self.api_client.is_authenticated():
@@ -207,6 +232,12 @@ class SettingsDialog(QDialog):
         try:
             # Configure and save
             self.api_client.configure(base_url, api_key)
+            
+            # Save private structure naming attribute setting
+            from .api_client import set_private_structure_naming_attribute
+            naming_attr = self.naming_attribute_combo.currentText()
+            set_private_structure_naming_attribute(naming_attr)
+            
             self.api_client.save_config()
             
             # Test the configuration

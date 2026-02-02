@@ -43,17 +43,20 @@ from .api_client import ThreeDecisionAPIClient
 from .settings import SettingsDialog
 
 
-def get_object_name(external_code: str, label: str = None, source: str = None) -> str:
+def get_object_name(external_code: str, label: str = None, source: str = None, title: str = None, internal_id: str = None) -> str:
     """
     Determine the best object name for a structure in ChimeraX.
     
     Naming logic:
     - For public domain structures (RCSB PDB, PDB, AlphaFold, etc.): use external_code (e.g., '1abo')
-    - For private/internal structures with a label: use the label
+    - For private/internal structures: use the attribute configured in settings 
+      (label, title, external_code, or internal_id)
     - Fallback: use external_code
     
     The name is sanitized to be valid for ChimeraX (no spaces, special chars replaced).
     """
+    from .api_client import get_private_structure_naming_attribute
+    
     # Define public/known sources where external_code is meaningful
     public_sources = [
         'rcsb', 'pdb', 'alphafold', 'uniprot', 'chembl', 'drugbank',
@@ -70,12 +73,19 @@ def get_object_name(external_code: str, label: str = None, source: str = None) -
     if is_public:
         # Use external_code for public structures (it's the PDB code, etc.)
         name = external_code
-    elif label and label.strip() and label.lower() not in ['n/a', 'null', 'none', '']:
-        # Use label for private structures if available
-        name = label.strip()
     else:
-        # Fallback to external_code
-        name = external_code
+        # For private structures, use the configured naming attribute
+        naming_attr = get_private_structure_naming_attribute()
+        
+        if naming_attr == 'label' and label and label.strip() and label.lower() not in ['n/a', 'null', 'none', '']:
+            name = label.strip()
+        elif naming_attr == 'title' and title and title.strip() and title.lower() not in ['n/a', 'null', 'none', '']:
+            name = title.strip()
+        elif naming_attr == 'internal_id' and internal_id and internal_id.strip() and internal_id.lower() not in ['n/a', 'null', 'none', '']:
+            name = internal_id.strip()
+        else:
+            # Fallback to external_code
+            name = external_code
     
     # Strip '3dec_' prefix if present (from API file naming)
     if name.lower().startswith('3dec_'):
@@ -1134,11 +1144,12 @@ class ThreeDecisionTool(ToolInstance):
             item.setData(Qt.UserRole, structure)  # Store structure data
             self.results_table.setItem(row, 0, item)
             
-            # Label
-            self.results_table.setItem(row, 1, QTableWidgetItem(external_code))
+            # Label - show empty if empty or missing
+            label = general.get('label', '')
+            self.results_table.setItem(row, 1, QTableWidgetItem(label))
             
             # Title
-            title = general.get('title', 'N/A')
+            title = general.get('title', '')
             self.results_table.setItem(row, 2, QTableWidgetItem(title))
             
             # Method
@@ -1396,13 +1407,47 @@ class ThreeDecisionTool(ToolInstance):
                         if models:
                             # Rename models based on structure info using get_object_name
                             for i, (model, structure_info) in enumerate(zip(models, structures)):
-                                structure_id = structure_info['structure_id']
-                                external_code = structure_info['external_code']
-                                label = structure_info.get('label')
-                                source = structure_info.get('source')
+                                # Handle both nested (GraphQL) and flat structure formats
+                                # GraphQL returns data under 'general', project endpoint returns flat structure
+                                general = structure_info.get('general', {})
+                                structure_id = structure_info.get('structure_id') or general.get('structure_id')
+                                external_code = general.get('external_code') or structure_info.get('external_code', str(structure_id))
+                                source = general.get('source') or structure_info.get('source')
+                                
+                                # If data came from project endpoint (no 'general'), fetch actual structure metadata
+                                # The project endpoint's 'label' field contains the title, not the actual label
+                                if not general and structure_id:
+                                    # Fetch actual structure info via GraphQL for accurate label/title
+                                    struct_info_list = self.api_client.get_structures_info([int(structure_id)])
+                                    if struct_info_list:
+                                        actual_general = struct_info_list[0].get('general', {})
+                                        label = actual_general.get('label')
+                                        title = actual_general.get('title')
+                                        if not source:
+                                            source = actual_general.get('source')
+                                    else:
+                                        label = None
+                                        title = None
+                                else:
+                                    # Data from GraphQL search - use as-is
+                                    label = general.get('label')
+                                    title = general.get('title')
+                                
+                                # Debug logging
+                                from .api_client import get_private_structure_naming_attribute
+                                naming_attr = get_private_structure_naming_attribute()
+                                self.api_client.log_info(f"DEBUG: structure_info keys: {structure_info.keys()}")
+                                self.api_client.log_info(f"DEBUG: general keys: {general.keys() if general else 'None'}")
+                                self.api_client.log_info(f"DEBUG: naming_attr={naming_attr}, source={source}, title={title}, label={label}, external_code={external_code}")
+                                
+                                # Fetch internal_id if the naming attribute is set to 'internal_id'
+                                internal_id = None
+                                if naming_attr == 'internal_id':
+                                    internal_id = self.api_client.get_structure_internal_id(structure_id)
                                 
                                 # Use smart object naming (same as PyMOL plugin)
-                                object_name = get_object_name(external_code, label, source)
+                                object_name = get_object_name(external_code, label, source, title, internal_id)
+                                self.api_client.log_info(f"DEBUG: get_object_name returned: {object_name}")
                                 model.name = object_name
                                 
                                 # Set metadata attributes
@@ -1654,7 +1699,11 @@ class ThreeDecisionTool(ToolInstance):
             # Structure details
             structure_id = str(structure.get('STRUCTURE_ID', structure.get('structure_id', '')))
             external_code = structure.get('EXTERNAL_CODE', structure.get('external_code', structure_id))
-            description = structure.get('PROJECT_LABEL', structure.get('description', ''))
+            # Description can come from multiple fields: label, PROJECT_LABEL, description
+            description = (structure.get('label') or 
+                          structure.get('LABEL') or
+                          structure.get('PROJECT_LABEL') or 
+                          structure.get('description', ''))
             
             id_item = QTableWidgetItem(structure_id)
             id_item.setData(Qt.UserRole, structure)  # Store full structure data
